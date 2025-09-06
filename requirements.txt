@@ -1,0 +1,23 @@
+# Financial Data Server Requirements
+
+# FastAPI and web server
+fastapi==0.104.1
+uvicorn==0.24.0
+
+# Data handling (use precompiled version if available)
+pandas>=2.0.0
+pydantic==2.5.0
+
+# Date and time utilities
+python-dateutil==2.8.2
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+httpx==0.25.2
+
+# Existing ticker downloader dependencies (optional for testing)
+# yfinance==0.2.18
+# defeatbeta-api==0.1.2
+# alpha-vantage==2.3.1
+requests==2.31.0
