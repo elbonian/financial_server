@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from .database import LocalDatabase
 from .data_fetcher import DataFetcher
 from .models import PriceDataResponse, CacheStatusResponse, ErrorResponse
-from .utils import identify_missing_ranges
+from .utils import identify_missing_ranges, adjust_end_date_for_data_quality
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -100,13 +100,17 @@ async def get_ticker_prices(
     Get price data for a ticker symbol within a date range.
     Automatically fetches and caches missing data.
     
+    Note: To ensure data quality, requests that include today's date will be 
+    automatically adjusted to end on yesterday's date. This prevents returning 
+    provisional intraday data that might be mislabeled as closing prices.
+    
     Args:
         symbol: Ticker symbol (e.g., 'AAPL', 'BTC-USD')
         start_date: Start date for data range
-        end_date: End date for data range
+        end_date: End date for data range (automatically adjusted if today or later)
     
     Returns:
-        Complete price data for the requested range
+        Complete price data for the requested range (may end earlier than requested)
     """
     try:
         # Validate inputs
@@ -122,10 +126,23 @@ async def get_ticker_prices(
                 detail="start_date cannot be in the future"
             )
         
+        # Adjust end date to exclude today for data quality
+        adjusted_end_date = adjust_end_date_for_data_quality(end_date)
+        
+        # Check if adjusted range is still valid
+        if start_date > adjusted_end_date:
+            raise HTTPException(
+                status_code=400,
+                detail="No data available for the requested date range"
+            )
+        
         # Normalize symbol (uppercase)
         symbol = symbol.upper()
         
-        logger.info(f"📊 Request: {symbol} from {start_date} to {end_date}")
+        logger.info(f"📊 Request: {symbol} from {start_date} to {adjusted_end_date}")
+        
+        # Use adjusted end date for all subsequent operations
+        end_date = adjusted_end_date
         
         # 1. Check what we have in database
         existing_data = db.get_price_range(symbol, start_date, end_date)
@@ -203,10 +220,10 @@ async def get_complete_ticker_data(
             latest_date = db.get_latest_date_for_symbol(symbol)
             
             if latest_date:
-                # Calculate incremental range (latest + 1 day to today)
+                # Calculate incremental range (latest + 1 day to yesterday for data quality)
                 from datetime import timedelta
                 incremental_start = latest_date + timedelta(days=1)
-                incremental_end = date.today()
+                incremental_end = adjust_end_date_for_data_quality(date.today())
                 
                 if incremental_start <= incremental_end:
                     logger.info(f"🔄 Fetching incremental data from {incremental_start} to {incremental_end}")

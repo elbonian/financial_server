@@ -237,3 +237,21 @@ def chunk_date_range(start_date: date, end_date: date, max_chunk_days: int = 365
         current_start = chunk_end + timedelta(days=1)
     
     return chunks
+
+def adjust_end_date_for_data_quality(end_date: date) -> date:
+    """
+    Adjust end date to exclude today to ensure only finalized closing prices are returned.
+    
+    This prevents returning provisional intraday data that might be mislabeled as 
+    closing prices when markets are still open.
+    
+    Args:
+        end_date: Requested end date
+        
+    Returns:
+        Adjusted end date (yesterday if original end date was today or later)
+    """
+    today = date.today()
+    if end_date >= today:
+        return today - timedelta(days=1)
+    return end_date
