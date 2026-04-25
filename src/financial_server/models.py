@@ -58,3 +58,16 @@ class ServerInfoResponse(BaseModel):
     version: str = Field(..., description="Service version")
     status: str = Field(..., description="Service status")
     endpoints: Dict[str, str] = Field(..., description="Available endpoints")
+
+class DividendRecord(BaseModel):
+    """Individual dividend record"""
+    date: str = Field(..., description="Dividend date (YYYY-MM-DD)")
+    amount: float = Field(..., description="Dividend amount per share")
+
+class DividendResponse(BaseModel):
+    """Response model for dividend data"""
+    symbol: str = Field(..., description="Ticker symbol")
+    start_date: date = Field(..., description="Start date of requested range")
+    end_date: date = Field(..., description="End date of requested range")
+    data_points: int = Field(..., description="Number of dividend records")
+    data: List[DividendRecord] = Field(..., description="Dividend records")

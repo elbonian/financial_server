@@ -80,6 +80,72 @@ When external data sources are unavailable:
 }
 ```
 
+### GET /api/v1/tickers/{symbol}/dividends
+
+Get historical dividend data for a stock.
+
+**Note**: Not all instruments pay dividends (e.g., growth stocks, ETFs like SCHD do; TSLA, BTC-USD do not).
+
+#### Parameters
+- `symbol` (path): Ticker symbol (e.g., "AAPL", "MSFT", "SCHD")
+- `start_date` (query): Start date in YYYY-MM-DD format
+- `end_date` (query): End date in YYYY-MM-DD format
+
+#### Success Response (200)
+Returns dividend payments within the requested date range.
+
+```json
+{
+  "symbol": "SCHD",
+  "start_date": "2024-01-01",
+  "end_date": "2024-12-31",
+  "data_points": 4,
+  "data": [
+    {
+      "date": "2024-03-20",
+      "amount": 0.203667
+    },
+    {
+      "date": "2024-06-26",
+      "amount": 0.274667
+    },
+    {
+      "date": "2024-09-25",
+      "amount": 0.251667
+    },
+    {
+      "date": "2024-12-11",
+      "amount": 0.265
+    }
+  ]
+}
+```
+
+#### No Dividends Response (200)
+When the symbol exists but pays no dividends in the range:
+
+```json
+{
+  "symbol": "TSLA",
+  "start_date": "2024-01-01",
+  "end_date": "2024-12-31",
+  "data_points": 0,
+  "data": []
+}
+```
+
+#### Examples
+
+**Dividend-paying stock (SCHD ETF)**
+```bash
+curl "http://localhost:8000/api/v1/tickers/SCHD/dividends?start_date=2024-01-01&end_date=2024-12-31"
+```
+
+**Quarterly dividend stock (AAPL)**
+```bash
+curl "http://localhost:8000/api/v1/tickers/AAPL/dividends?start_date=2024-01-01&end_date=2024-12-31"
+```
+
 ### GET /api/v1/cache/status/{symbol}
 
 Get cache status for a specific symbol.

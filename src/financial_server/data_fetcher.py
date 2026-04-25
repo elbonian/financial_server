@@ -262,3 +262,62 @@ class DataFetcher:
         valid_sources = ['defeatbeta', 'yfinance', 'alpha_vantage']
         self.sources = [s for s in sources if s in valid_sources]
         logger.info(f"📡 Source order updated: {self.sources}")
+    
+    def fetch_dividends(self, symbol: str, start_date: date, end_date: date) -> List[Dict]:
+        """
+        Fetch dividend data for a symbol and date range using yfinance
+        
+        Args:
+            symbol: Ticker symbol (e.g., 'AAPL', 'MSFT')
+            start_date: Start date
+            end_date: End date
+            
+        Returns:
+            List of dividend records with date and amount
+        """
+        try:
+            import yfinance as yf
+            
+            symbol = symbol.upper()
+            start_str = start_date.strftime("%Y-%m-%d")
+            end_str = end_date.strftime("%Y-%m-%d")
+            
+            logger.info(f"💰 Fetching dividends for {symbol} from {start_str} to {end_str}")
+            
+            ticker = yf.Ticker(symbol)
+            
+            # Get all historical dividends (yfinance returns all available)
+            dividends = ticker.dividends
+            
+            if dividends is None or dividends.empty:
+                logger.info(f"ℹ️ No dividend data available for {symbol}")
+                return []
+            
+            # Filter to requested date range and convert to list of dicts
+            dividend_records = []
+            for date_index, amount in dividends.items():
+                # Convert timestamp to date
+                if hasattr(date_index, 'date'):
+                    div_date = date_index.date()
+                elif hasattr(date_index, 'to_pydatetime'):
+                    div_date = date_index.to_pydatetime().date()
+                else:
+                    # Parse from string if needed
+                    div_date = datetime.strptime(str(date_index)[:10], '%Y-%m-%d').date()
+                
+                # Filter by date range
+                if start_date <= div_date <= end_date:
+                    dividend_records.append({
+                        'date': div_date.strftime('%Y-%m-%d'),
+                        'amount': float(amount)
+                    })
+            
+            # Sort by date
+            dividend_records.sort(key=lambda x: x['date'])
+            
+            logger.info(f"✅ Got {len(dividend_records)} dividend records for {symbol}")
+            return dividend_records
+            
+        except Exception as e:
+            logger.error(f"❌ Error fetching dividends for {symbol}: {e}")
+            return []

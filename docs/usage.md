@@ -1,160 +1,146 @@
 # Usage Guide
 
-## Data Availability Principles
+## Data Availability
 
-The Financial Data Server follows these key principles:
-
-1. **No Mock Data**
-   - The server never generates mock/fake data
-   - If data isn't available, it returns an error
-   - Clear error messages indicate why data is unavailable
-
-2. **Partial Data Handling**
-   - If only part of the requested range is available, returns that part
-   - Response includes actual date range of available data
-   - Metadata shows actual data points count
-
-3. **Data Source Priority**
-   ```
-   1. Check local cache (SQLite)
-   2. Try Yahoo Finance
-   3. Try Alpha Vantage (if configured)
-   4. Return error if no data available
-   ```
+This server only returns real data from Yahoo Finance. If data isn't available, you get an error instead of fake data.
 
 ## Basic Usage
 
-### 1. Get Stock Prices (Example: NVIDIA)
+### Get Stock Prices
+
 ```bash
-# Request NVIDIA 2025 data
-curl "http://localhost:8000/api/v1/tickers/NVDA/prices?start_date=2025-01-01&end_date=2025-12-31"
-
-# Server will:
-# 1. Check cache for existing data (0 records found)
-# 2. Download missing data from yfinance_direct (145 records)
-# 3. Cache data in SQLite for future requests
-# 4. Return available data (Jan 2 - Aug 1, 2025)
+curl "http://localhost:8000/api/v1/tickers/AAPL/prices?start_date=2024-01-01&end_date=2024-12-31"
 ```
 
-Example server logs:
-```
-INFO: Request: NVDA from 2025-01-01 to 2025-12-31
-INFO: Found 0 existing records in database
-INFO: Got 145 real records from yfinance direct
-INFO: Inserted 145 records for NVDA
-INFO: Returning 145 total records
-```
+The server will:
+1. Check the SQLite cache for existing data
+2. Download any missing data from Yahoo Finance
+3. Cache it for future requests
+4. Return the complete dataset
 
-### 2. Handle Partial Data
-```python
-import requests
-
-def get_price_data(symbol, start_date, end_date):
-    response = requests.get(
-        "http://localhost:8000/api/v1/tickers/BTC-USD/prices",
-        params={"start_date": start_date, "end_date": end_date}
-    )
-    
-    if response.status_code == 200:
-        data = response.json()
-        print(f"Requested range: {start_date} to {end_date}")
-        print(f"Available range: {data['start_date']} to {data['end_date']}")
-        print(f"Data points: {data['data_points']}")
-        return data['data']
-    elif response.status_code == 404:
-        print("No data available for requested range")
-        return None
-    else:
-        print(f"Error: {response.json()['error']}")
-        return None
+Example response:
+```json
+{
+  "symbol": "AAPL",
+  "data_points": 252,
+  "start_date": "2024-01-02",
+  "end_date": "2024-12-31",
+  "data": [
+    {
+      "date": "2024-01-02",
+      "open": 185.0,
+      "high": 188.5,
+      "low": 184.5,
+      "close": 187.5,
+      "volume": 52341200,
+      "source": "yfinance_direct"
+    }
+  ]
+}
 ```
 
-### 3. Check Cache Status
+### Get Dividend History
+
 ```bash
-# Check what data is already cached
-curl "http://localhost:8000/api/v1/cache/status/BTC-USD"
+curl "http://localhost:8000/api/v1/tickers/SCHD/dividends?start_date=2024-01-01&end_date=2024-12-31"
+```
+
+Example response:
+```json
+{
+  "symbol": "SCHD",
+  "data_points": 4,
+  "start_date": "2024-01-01",
+  "end_date": "2024-12-31",
+  "data": [
+    {"date": "2024-03-20", "amount": 0.203667},
+    {"date": "2024-06-26", "amount": 0.274667},
+    {"date": "2024-09-25", "amount": 0.251667},
+    {"date": "2024-12-11", "amount": 0.265}
+  ]
+}
+```
+
+### Get Complete Historical Dataset
+
+```bash
+curl "http://localhost:8000/api/v1/tickers/AAPL/complete"
+```
+
+This fetches from IPO to present. First request takes a few seconds. Subsequent requests are instant.
+
+### Check Cache Status
+
+```bash
+curl "http://localhost:8000/api/v1/cache/status/AAPL"
 ```
 
 ## Error Handling
 
-### 1. No Data Available
+**No Data Available (404)**
+```bash
+curl "http://localhost:8000/api/v1/tickers/INVALID/prices?start_date=2024-01-01&end_date=2024-12-31"
+```
+Returns: `{"detail": "No data available for INVALID in the requested date range"}`
+
+**Invalid Date Range (400)**
+```bash
+curl "http://localhost:8000/api/v1/tickers/AAPL/prices?start_date=2025-12-31&end_date=2024-01-01"
+```
+Returns: `{"detail": "start_date must be before or equal to end_date"}`
+
+## Python Example
+
 ```python
-try:
+import requests
+
+def get_prices(symbol, start_date, end_date):
+    url = f"http://localhost:8000/api/v1/tickers/{symbol}/prices"
+    params = {"start_date": start_date, "end_date": end_date}
     response = requests.get(url, params=params)
-    if response.status_code == 404:
-        error = response.json()
-        if error['code'] == 'NO_DATA_AVAILABLE':
-            print(f"No data available: {error['detail']}")
-        elif error['code'] == 'INVALID_SYMBOL':
-            print(f"Invalid symbol: {error['detail']}")
-except requests.exceptions.RequestException as e:
-    print(f"Request failed: {e}")
+    
+    if response.status_code == 200:
+        data = response.json()
+        return data['data']
+    elif response.status_code == 404:
+        print("No data available")
+        return None
+    else:
+        print(f"Error: {response.status_code}")
+        return None
+
+# Usage
+prices = get_prices("AAPL", "2024-01-01", "2024-12-31")
+if prices:
+    print(f"Got {len(prices)} price records")
 ```
 
-### 2. External Service Errors
-```python
-if response.status_code == 503:
-    error = response.json()
-    if error['code'] == 'EXTERNAL_SERVICE_ERROR':
-        print("Data providers unavailable, try again later")
-```
+## Date Handling
 
-## Best Practices
+The server automatically cuts off at yesterday's date if you request data that includes "today". This prevents getting provisional intraday data mislabeled as closing prices.
 
-1. **Check Cache First**
-   ```bash
-   # Before large requests, check what's cached
-   curl "http://localhost:8000/api/v1/cache/status/BTC-USD"
-   ```
+**Example:** If today is April 25 and you request Jan 1 to today, you get Jan 1 to April 24.
 
-2. **Handle Partial Data**
-   - Always check actual date range in response
-   - Compare with requested range
-   - Process available data accordingly
+## Cache Behavior
 
-3. **Error Handling**
-   - Implement proper error handling
-   - Check error codes and messages
-   - Have fallback behavior for missing data
-
-4. **Date Ranges**
-   - Request reasonable date ranges
-   - Consider data availability
-   - Handle timezone differences
+- First request for a symbol: fetches from Yahoo Finance (1-3 seconds)
+- Subsequent requests for cached dates: < 50ms
+- Partial cache hit: only fetches missing dates
+- No automatic expiration - data persists in `financial_data.db`
 
 ## Troubleshooting
 
-### Common Issues
+**Server not responding?**
+```bash
+curl http://localhost:8000/health
+```
 
-1. **No Data Available**
-   - Verify symbol exists
-   - Check date range is valid
-   - Ensure external services are accessible
+**Want to see what's cached?**
+```bash
+curl http://localhost:8000/api/v1/cache/status
+```
 
-2. **Partial Data**
-   - Normal if requesting historical data
-   - Check actual date range in response
-   - Adjust application logic accordingly
-
-3. **Service Errors**
-   - Check server health endpoint
-   - Verify internet connection
-   - Try again later if external services down
-
-### Debugging Tips
-
-1. **Check Server Health**
-   ```bash
-   curl "http://localhost:8000/health"
-   ```
-
-2. **Verify Cache Status**
-   ```bash
-   curl "http://localhost:8000/api/v1/cache/status/BTC-USD"
-   ```
-
-3. **Test with Known Data**
-   ```bash
-   # Try recent date ranges first
-   curl "http://localhost:8000/api/v1/tickers/BTC-USD/prices?start_date=2024-01-01&end_date=2024-01-31"
-   ```
+**Need to force refresh complete data?**
+```bash
+curl "http://localhost:8000/api/v1/tickers/AAPL/complete?force_refresh=true"
+```

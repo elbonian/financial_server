@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 
 from .database import LocalDatabase
 from .data_fetcher import DataFetcher
-from .models import PriceDataResponse, CacheStatusResponse, ErrorResponse
+from .models import PriceDataResponse, CacheStatusResponse, ErrorResponse, DividendResponse
 from .utils import identify_missing_ranges, adjust_end_date_for_data_quality
 
 # Configure logging
@@ -67,6 +67,7 @@ async def root():
         "status": "running",
         "endpoints": {
             "prices": "/api/v1/tickers/{symbol}/prices",
+            "dividends": "/api/v1/tickers/{symbol}/dividends",
             "complete": "/api/v1/tickers/{symbol}/complete",
             "cache_status": "/api/v1/cache/status/{symbol}",
             "health": "/health",
@@ -386,6 +387,62 @@ async def get_all_cache_status() -> List[CacheStatusResponse]:
     except Exception as e:
         logger.error(f"❌ Error getting all cache status: {e}")
         raise HTTPException(status_code=500, detail=f"Error getting cache status: {str(e)}")
+
+@app.get("/api/v1/tickers/{symbol}/dividends", response_model=DividendResponse)
+async def get_ticker_dividends(
+    symbol: str,
+    start_date: date = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: date = Query(..., description="End date (YYYY-MM-DD)"),
+) -> DividendResponse:
+    """
+    Get dividend data for a ticker symbol within a date range.
+    
+    Returns historical dividend payments with dates and amounts per share.
+    Note: Not all stocks pay dividends (e.g., growth stocks, crypto).
+    
+    Args:
+        symbol: Ticker symbol (e.g., 'AAPL', 'MSFT', 'JNJ')
+        start_date: Start date for dividend range
+        end_date: End date for dividend range
+    
+    Returns:
+        Dividend records with date and amount per share
+    """
+    try:
+        # Validate inputs
+        if start_date > end_date:
+            raise HTTPException(
+                status_code=400, 
+                detail="start_date must be before or equal to end_date"
+            )
+        
+        if start_date > date.today():
+            raise HTTPException(
+                status_code=400,
+                detail="start_date cannot be in the future"
+            )
+        
+        # Normalize symbol (uppercase)
+        symbol = symbol.upper()
+        
+        logger.info(f"💰 Dividend request: {symbol} from {start_date} to {end_date}")
+        
+        # Fetch dividends from data fetcher
+        dividend_data = data_fetcher.fetch_dividends(symbol, start_date, end_date)
+        
+        return DividendResponse(
+            symbol=symbol,
+            start_date=start_date,
+            end_date=end_date,
+            data_points=len(dividend_data),
+            data=dividend_data
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error processing dividend request: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
