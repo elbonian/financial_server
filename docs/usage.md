@@ -121,6 +121,32 @@ The server automatically cuts off at yesterday's date if you request data that i
 
 **Example:** If today is April 25 and you request Jan 1 to today, you get Jan 1 to April 24.
 
+## Including Today's Data
+
+Use `allow_today=true` to include today's data. This fetches fresh data directly from Yahoo Finance **without caching it**.
+
+```bash
+# Get historical data + today's fresh price
+curl "http://localhost:8000/api/v1/tickers/AAPL/prices?start_date=2024-01-01&end_date=2025-04-25&allow_today=true"
+```
+
+**When to use:**
+- After market close (4 PM EST for US stocks) to get the official closing price
+- For live dashboards that need current prices during trading hours
+- When you know the data you want is available despite the date being "today"
+
+**Response includes:**
+```json
+{
+  "symbol": "AAPL",
+  "includes_today_data": true,
+  "data_points": 253,
+  "data": [...]
+}
+```
+
+**Important:** The client is responsible for knowing when markets are open. The server doesn't track timezones or market hours.
+
 ## Cache Behavior
 
 - First request for a symbol: fetches from Yahoo Finance (1-3 seconds)

@@ -10,6 +10,7 @@ Get historical price data for a financial instrument.
 - `symbol` (path): Ticker symbol (e.g., "BTC-USD", "AAPL")
 - `start_date` (query): Start date in YYYY-MM-DD format
 - `end_date` (query): End date in YYYY-MM-DD format
+- `allow_today` (query, optional): Include today's data (default: false). When true, fetches fresh data directly without caching. Client is responsible for determining when to use this (e.g., after market close or for live tracking).
 
 #### Success Response (200)
 Returns available data within the requested range. The server will:

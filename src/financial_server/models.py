@@ -22,6 +22,7 @@ class PriceDataResponse(BaseModel):
     start_date: date = Field(..., description="Start date of requested range")
     end_date: date = Field(..., description="End date of requested range")
     data_points: int = Field(..., description="Number of data points returned")
+    includes_today_data: bool = Field(default=False, description="Whether today's data is included (only fresh, not cached)")
     data: List[PriceRecord] = Field(..., description="Price data records")
 
 class DateRange(BaseModel):

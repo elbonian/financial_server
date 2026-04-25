@@ -5,7 +5,7 @@ Simple FastAPI server for serving historical financial data with SQLite storage
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import List, Dict, Optional
 import logging
 from contextlib import asynccontextmanager
@@ -96,22 +96,28 @@ async def get_ticker_prices(
     symbol: str,
     start_date: date = Query(..., description="Start date (YYYY-MM-DD)"),
     end_date: date = Query(..., description="End date (YYYY-MM-DD)"),
+    allow_today: bool = Query(False, description="Include today's data (fetched fresh, not cached)"),
 ) -> PriceDataResponse:
     """
     Get price data for a ticker symbol within a date range.
     Automatically fetches and caches missing data.
     
-    Note: To ensure data quality, requests that include today's date will be 
-    automatically adjusted to end on yesterday's date. This prevents returning 
-    provisional intraday data that might be mislabeled as closing prices.
+    Note: By default, requests that include today's date are automatically adjusted
+    to end on yesterday's date. This prevents returning provisional intraday data
+    that might be mislabeled as closing prices.
+    
+    Use allow_today=true to include today's data. This fetches fresh data directly
+    from Yahoo Finance without caching it. The client is responsible for determining
+    when to use this (e.g., after market close, or for live price tracking).
     
     Args:
         symbol: Ticker symbol (e.g., 'AAPL', 'BTC-USD')
         start_date: Start date for data range
-        end_date: End date for data range (automatically adjusted if today or later)
+        end_date: End date for data range
+        allow_today: Include today's data (not cached, always fetched fresh)
     
     Returns:
-        Complete price data for the requested range (may end earlier than requested)
+        Complete price data for the requested range
     """
     try:
         # Validate inputs
@@ -127,11 +133,30 @@ async def get_ticker_prices(
                 detail="start_date cannot be in the future"
             )
         
-        # Adjust end date to exclude today for data quality
-        adjusted_end_date = adjust_end_date_for_data_quality(end_date)
+        today = date.today()
+        includes_today = False
+        today_data = []
+        
+        # Check if today's data is requested
+        if end_date >= today:
+            if allow_today:
+                # Fetch today's data fresh (not cached)
+                logger.info(f"📊 Request: {symbol} with allow_today=true")
+                try:
+                    today_data = data_fetcher.fetch_range(symbol, today, today)
+                    if today_data:
+                        includes_today = True
+                        logger.info(f"✅ Got {len(today_data)} fresh records for today")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to fetch today's data: {e}")
+                # Adjust end date to yesterday for historical data
+                end_date = today - timedelta(days=1)
+            else:
+                # Adjust end date to exclude today
+                end_date = adjust_end_date_for_data_quality(end_date)
         
         # Check if adjusted range is still valid
-        if start_date > adjusted_end_date:
+        if start_date > end_date and not includes_today:
             raise HTTPException(
                 status_code=400,
                 detail="No data available for the requested date range"
@@ -140,10 +165,7 @@ async def get_ticker_prices(
         # Normalize symbol (uppercase)
         symbol = symbol.upper()
         
-        logger.info(f"📊 Request: {symbol} from {start_date} to {adjusted_end_date}")
-        
-        # Use adjusted end date for all subsequent operations
-        end_date = adjusted_end_date
+        logger.info(f"📊 Request: {symbol} from {start_date} to {end_date}")
         
         # 1. Check what we have in database
         existing_data = db.get_price_range(symbol, start_date, end_date)
@@ -170,7 +192,11 @@ async def get_ticker_prices(
                     # Continue with other ranges, don't fail entire request
         
         # 4. Get complete data from database
-        complete_data = db.get_price_range(symbol, start_date, end_date)
+        historical_data = db.get_price_range(symbol, start_date, end_date)
+        logger.info(f"📂 Found {len(historical_data)} historical records")
+        
+        # Combine with today's data if present
+        complete_data = historical_data + today_data
         logger.info(f"📤 Returning {len(complete_data)} total records")
         
         if not complete_data:
@@ -179,11 +205,16 @@ async def get_ticker_prices(
                 detail=f"No data available for {symbol} in the requested date range"
             )
         
+        # Determine actual date range from the data
+        actual_start = start_date
+        actual_end = end_date if not includes_today else today
+        
         return PriceDataResponse(
             symbol=symbol,
-            start_date=start_date,
-            end_date=end_date,
+            start_date=actual_start,
+            end_date=actual_end,
             data_points=len(complete_data),
+            includes_today_data=includes_today,
             data=complete_data
         )
         
